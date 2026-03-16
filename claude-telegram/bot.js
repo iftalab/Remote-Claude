@@ -2,7 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { exec } = require('child_process');
 const path = require('path');
 const config = require('./config');
-const AgentManager = require('./agent-persistent'); // Use persistent agent
+const AgentManager = require('./agent-sdk'); // Use Claude Agent SDK
 const { injectPersona, getPersona, updatePersonaInConfig } = require('./persona');
 const {
   detectSignals,

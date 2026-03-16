@@ -38,18 +38,13 @@ class PersistentAgentManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       console.log(`[Persistent Agent] Spawning Claude process in ${this.projectDir}`);
 
-      // Build the initial command
+      // Build the command - NO -p flag! We want interactive mode
       const args = [
         '--allowedTools', this.claudeTools,
         '--dangerously-skip-permissions'
       ];
 
-      // If we have an initial prompt (persona), add it
-      if (initialPrompt) {
-        args.push('-p', initialPrompt);
-      }
-
-      // Spawn the process
+      // Spawn the process in INTERACTIVE mode
       this.process = spawn('claude', args, {
         cwd: this.projectDir,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -87,10 +82,34 @@ class PersistentAgentManager extends EventEmitter {
         reject(error);
       });
 
-      // Wait for process to be ready
-      // In persistent mode, we consider it ready after spawning
-      setTimeout(() => {
+      // Wait for process to be ready, then handle permission prompt
+      setTimeout(async () => {
+        // Send "2" to accept bypass permissions prompt (if shown)
+        // This is safe because if no prompt is shown, it's just ignored
+        try {
+          this.process.stdin.write('2\n');
+          console.log(`[Persistent Agent] Sent permission bypass confirmation`);
+        } catch (error) {
+          console.error(`[Persistent Agent] Failed to send permission confirmation:`, error.message);
+        }
+
+        // Wait a bit for permission to be processed
+        await new Promise(r => setTimeout(r, 1000));
+
         this.isReady = true;
+
+        // If we have an initial prompt (persona), send it as first message
+        if (initialPrompt) {
+          try {
+            console.log(`[Persistent Agent] Sending initial prompt/persona (${initialPrompt.length} chars)`);
+            await this.sendMessage(initialPrompt);
+            console.log(`[Persistent Agent] Initial prompt processed`);
+          } catch (error) {
+            console.error(`[Persistent Agent] Failed to send initial prompt:`, error.message);
+            return reject(error);
+          }
+        }
+
         this.emit('ready');
         console.log(`[Persistent Agent] Process ready`);
         resolve();
