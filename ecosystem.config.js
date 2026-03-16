@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'claude-telegram-bot',
       script: 'bot.js',
-      cwd: './claude-telegram',
+      cwd: '/Users/ifta/Documents/projects/remote-claude/claude-telegram',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -25,7 +25,7 @@ module.exports = {
     {
       name: 'claude-telegram-ui',
       script: 'server.js',
-      cwd: './claude-telegram-ui',
+      cwd: '/Users/ifta/Documents/projects/remote-claude/claude-telegram-ui',
       instances: 1,
       autorestart: true,
       watch: false,

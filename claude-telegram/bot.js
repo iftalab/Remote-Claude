@@ -2,7 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { exec } = require('child_process');
 const path = require('path');
 const config = require('./config');
-const AgentManager = require('./agent');
+const AgentManager = require('./agent-persistent'); // Use persistent agent
 const { injectPersona, getPersona, updatePersonaInConfig } = require('./persona');
 const {
   detectSignals,
@@ -14,6 +14,7 @@ const {
 } = require('./tasks');
 const AutonomousLoop = require('./loop');
 const PlanningSession = require('./planner');
+const HistoryLogger = require('./history');
 
 // Store bot instances and their associated project info
 const bots = [];
@@ -163,17 +164,15 @@ async function initializeAgent(botInfo) {
   const { bot, project, agent } = botInfo;
 
   try {
-    console.log(`   - Spawning Claude process...`);
-    await agent.spawn();
-    console.log(`   ✓ Agent spawned for project: ${project.name}`);
-
     // Get persona for this project
     const persona = getPersona(project);
 
-    // Inject persona and wait for confirmation
-    console.log(`   - Injecting persona...`);
-    const confirmationResponse = await injectPersona(agent, persona);
-    console.log(`   ✓ Persona confirmed: ${confirmationResponse.substring(0, 50)}...`);
+    console.log(`   - Spawning persistent Claude process with persona...`);
+    console.log(`   - Persona size: ${persona ? persona.length : 0} chars`);
+
+    // Spawn with persona as initial prompt
+    await agent.spawn(persona);
+    console.log(`   ✓ Agent spawned with persona for project: ${project.name}`);
 
     // Mark agent as ready
     agent.markReady();
@@ -187,15 +186,15 @@ async function initializeAgent(botInfo) {
     agent.on('restart', async ({ crashCount, timestamp }) => {
       console.log(`   ✓ Agent restarted for project ${project.name} (after crash #${crashCount})`);
 
-      // Reinject persona after restart
+      // Respawn with persona after restart
       try {
-        console.log(`   - Reinjecting persona after crash...`);
+        console.log(`   - Respawning with persona after crash...`);
         const persona = getPersona(project);
-        await injectPersona(agent, persona);
+        await agent.spawn(persona);
         agent.markReady();
-        console.log(`   ✓ Persona reinjected after restart`);
+        console.log(`   ✓ Agent respawned with persona after restart`);
       } catch (error) {
-        console.error(`   ❌ Failed to reinject persona:`, error.message);
+        console.error(`   ❌ Failed to respawn agent:`, error.message);
       }
     });
 
@@ -400,6 +399,9 @@ function initializeBots() {
       // Create planning session manager
       const planner = new PlanningSession(agent);
 
+      // Create history logger
+      const history = new HistoryLogger(project.dir, project.name);
+
       // Store bot info
       const botInfo = {
         bot: bot,
@@ -407,6 +409,7 @@ function initializeBots() {
         agent: agent,
         loop: loop,
         planner: planner,
+        history: history,
         lastTaskTime: null,
         startTime: Date.now()
       };
@@ -500,12 +503,15 @@ function isAuthorized(userId) {
  * Execute Claude prompt via persistent agent
  */
 async function handlePrompt(botInfo, msg) {
-  const { bot, project, agent, planner } = botInfo;
+  const { bot, project, agent, planner, history } = botInfo;
   const chatId = msg.chat.id;
   const prompt = msg.text;
 
   // Update last task time
   botInfo.lastTaskTime = Date.now();
+
+  // Log user message to history
+  await history.logUser(prompt, { chatId, userId: msg.from.id });
 
   try {
     // If planning session is active, route message as answer
@@ -541,6 +547,9 @@ async function handlePrompt(botInfo, msg) {
 
     console.log(`✅ [${project.name}] Got response from agent (${response.length} chars)`);
 
+    // Log assistant response to history
+    await history.logAssistant(response, { responseLength: response.length });
+
     // Check for task-related signals in the response
     const signals = detectSignals(response);
 
@@ -565,6 +574,10 @@ async function handlePrompt(botInfo, msg) {
 
   } catch (error) {
     console.error(`❌ [${project.name}] Error handling prompt:`, error.message);
+
+    // Log error to history
+    await history.logAssistant(`ERROR: ${error.message}`, { error: true, errorType: error.name });
+
     await bot.sendMessage(chatId, `❌ Error: ${error.message}`).catch(() => {});
   }
 }
@@ -631,12 +644,11 @@ async function handleResetCommand(botInfo, chatId) {
     console.log(`[${project.name}] Resetting agent...`);
     await agent.kill();
 
-    // Spawn fresh process
-    await agent.spawn();
-
-    // Reinject persona
+    // Get persona
     const persona = getPersona(project);
-    await injectPersona(agent, persona);
+
+    // Spawn fresh process with persona
+    await agent.spawn(persona);
 
     // Mark as ready
     agent.markReady();
@@ -703,8 +715,7 @@ async function handleUpdatePersonaCommand(botInfo, chatId, messageText) {
     await bot.sendMessage(chatId, '🔄 Reloading agent with new persona...');
 
     await agent.kill();
-    await agent.spawn();
-    await injectPersona(agent, newPersona);
+    await agent.spawn(newPersona);
     agent.markReady();
 
     await bot.sendMessage(chatId, '✅ Persona updated and agent reloaded!');
