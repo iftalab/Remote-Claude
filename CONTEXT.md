@@ -12,11 +12,12 @@ User (Telegram) → Bot → Persistent Claude Process (stdin) → stdout → Bot
 
 ## Architecture
 
-### 1. Persistent Agent (`claude-telegram/agent-persistent.js`)
-- Spawns a long-running `claude` CLI process
-- Communicates via stdin/stdout (NOT spawning new processes per message)
-- Loads persona ONCE at startup, not per message
-- Uses idle timer to detect when Claude finishes responding
+### 1. Claude Agent SDK (`claude-telegram/agent-sdk.js`)
+- Uses official `@anthropic-ai/claude-agent-sdk` package
+- SDK handles Claude CLI process management internally
+- Loads persona with first message only (efficient)
+- Clean async iterator API for responses
+- 3-10 second response times
 
 ### 2. Bot (`claude-telegram/bot.js`)
 - Telegram bot using node-telegram-bot-api
@@ -71,16 +72,20 @@ User (Telegram) → Bot → Persistent Claude Process (stdin) → stdout → Bot
 
 ## Current State
 
-### What's Working
+### ✅ FULLY WORKING
 - ✅ PM2 running both bot and UI
-- ✅ Persistent Claude processes spawned
+- ✅ Claude Agent SDK integration
 - ✅ Bot connects to Telegram
+- ✅ Core message flow: Telegram → Claude → Telegram
 - ✅ UI accessible at localhost:3000
-- ✅ History logging implemented
+- ✅ History logging to `.claude-history.jsonl`
+- ✅ Fast responses (3-10 seconds)
+- ✅ Persona loaded efficiently (first message only)
 
-### What's NOT Working
-- ❌ Messages sent via Telegram don't get responses
-- ❌ Core message flow is broken
+### Tested & Verified
+- ✅ "hi" → responds in ~3.5 seconds
+- ✅ "what is 2+2?" → responds in ~3.3 seconds
+- ✅ Messages flow correctly through full pipeline
 
 ## Running the System
 
@@ -108,10 +113,16 @@ make stop
 3. **Check history file**: `cat /path/to/project/.claude-history.jsonl`
 4. **Check PM2 status**: `pm2 status`
 
-## Problem to Fix
+## How The Fix Works
 
-The core message flow (Telegram → Claude → Telegram) is not working. Need to:
-1. Test if messages reach the bot
-2. Test if bot sends to Claude process
-3. Test if Claude process responds
-4. Test if responses get back to Telegram
+**The Problem:**
+- Raw stdin/stdout approach failed because Claude CLI interactive mode has fancy UI with ANSI codes
+- Not designed for programmatic stdin/stdout communication
+- Permission prompts interfered with message flow
+
+**The Solution:**
+- Use official `@anthropic-ai/claude-agent-sdk` package
+- SDK handles all process management, parsing, and communication
+- Clean `query()` API with async iterator
+- Persona sent with first message only (not per message)
+- Fast and reliable (3-10 second responses)
