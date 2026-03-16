@@ -1,0 +1,28 @@
+{
+  "name": "claude-telegram",
+  "version": "1.0.0",
+  "description": "Telegram bridge for Claude Code - run Claude from any device via dedicated project bots",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node bot.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop claude-telegram",
+    "pm2:restart": "pm2 restart claude-telegram",
+    "pm2:logs": "pm2 logs claude-telegram"
+  },
+  "keywords": [
+    "telegram",
+    "claude",
+    "bot",
+    "ai",
+    "remote"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "node-pty": "^1.1.0",
+    "node-telegram-bot-api": "^0.67.0"
+  }
+}
