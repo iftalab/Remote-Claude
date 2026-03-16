@@ -43,9 +43,15 @@ User (Telegram) → Bot → Persistent Claude Process (stdin) → stdout → Bot
 
 `.env` file contains:
 - `ALLOWED_IDS` - Comma-separated Telegram user IDs
-- `EXEC_TIMEOUT_MS` - How long to wait for Claude (default: 120000)
+- `EXEC_TIMEOUT_MS` - Timeout for normal messages (default: 30000 = 30 seconds)
 - `RESPONSE_IDLE_MS` - How long of silence before considering response done (default: 3000)
 - `CLAUDE_TOOLS` - Comma-separated Claude tools to enable
+
+**Persona Files:**
+- Each project can have a `PERSONA.md` file in its directory
+- Claude reads this file on first message (not sent inline!)
+- Keeps messages small and fast
+- First message gets 45s timeout (to read persona), rest get 30s
 
 `projects.json` contains:
 ```json
