@@ -20,16 +20,14 @@ class ClaudeAgent extends EventEmitter {
   }
 
   /**
-   * Initialize with persona file path
+   * Initialize - persona handling skipped for now
    */
   async spawn(initialPrompt = null) {
     console.log(`[Claude Agent SDK] Ready for project in ${this.projectDir}`);
 
-    // Instead of storing the huge persona text, just tell Claude to read PERSONA.md
-    if (initialPrompt) {
-      this.persona = 'Read and load the PERSONA.md file in the current directory to understand your role and operating guidelines.';
-      console.log(`[Claude Agent SDK] Will instruct to read persona file on first message`);
-    }
+    // Skip persona entirely - let Claude Code work normally
+    // If project has PERSONA.md, Claude will read it automatically when needed
+    this.persona = null;
 
     this.isReady = true;
     this.emit('ready');
@@ -49,27 +47,16 @@ class ClaudeAgent extends EventEmitter {
     // Create abort controller for timeout
     this.currentAbortController = new AbortController();
 
-    // Use longer timeout for first message (reading persona file), normal timeout otherwise
-    const timeout = this.persona ? 45000 : this.execTimeout; // 45s for first message, normal for rest
-
-    if (this.persona) {
-      console.log(`[Claude Agent SDK] First message - instructing to read persona file (${timeout/1000}s timeout)`);
-    }
-
     const timeoutId = setTimeout(() => {
       if (this.currentAbortController) {
-        console.error(`[Claude Agent SDK] Timeout after ${timeout}ms`);
+        console.error(`[Claude Agent SDK] Timeout after ${this.execTimeout}ms`);
         this.currentAbortController.abort();
       }
-    }, timeout);
+    }, this.execTimeout);
 
     try {
-      // Prepend persona to first message if it exists
-      const fullPrompt = this.persona ? `${this.persona}\n\n${message}` : message;
-
-      // After first use, clear persona so it's not sent again
-      const sendingPersona = !!this.persona;
-      this.persona = null;
+      // Just send the message - no persona handling
+      const fullPrompt = message;
 
       // Call Claude using the SDK
       const response = query({
@@ -109,7 +96,7 @@ class ClaudeAgent extends EventEmitter {
           }
         } else if (responseMessage.type === 'result') {
           // Query complete
-          console.log(`[Claude Agent SDK] Got response (${fullResponse.length} chars, ${toolUseCount} tools)${sendingPersona ? ' [with persona]' : ''}`);
+          console.log(`[Claude Agent SDK] Got response (${fullResponse.length} chars, ${toolUseCount} tools)`);
           break;
         }
       }
