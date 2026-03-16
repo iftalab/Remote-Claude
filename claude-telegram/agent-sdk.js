@@ -49,12 +49,19 @@ class ClaudeAgent extends EventEmitter {
     // Create abort controller for timeout
     this.currentAbortController = new AbortController();
 
+    // If we have a persona to send, use 3 minute timeout (persona can be huge like 9477 chars!)
+    const timeout = this.persona ? 180000 : this.execTimeout;
+
+    if (this.persona) {
+      console.log(`[Claude Agent SDK] First message with persona (${this.persona.length} chars) - using ${timeout/1000}s timeout`);
+    }
+
     const timeoutId = setTimeout(() => {
       if (this.currentAbortController) {
-        console.error(`[Claude Agent SDK] Timeout after ${this.execTimeout}ms`);
+        console.error(`[Claude Agent SDK] Timeout after ${timeout}ms`);
         this.currentAbortController.abort();
       }
-    }, this.execTimeout);
+    }, timeout);
 
     try {
       // Prepend persona to first message if it exists
