@@ -173,6 +173,55 @@ app.get('/api/projects/:name/history', async (req, res) => {
 });
 
 /**
+ * GET /api/processes
+ * List all running Claude Code processes on the system
+ */
+app.get('/api/processes', async (req, res) => {
+  try {
+    const { spawn } = await import('child_process');
+    const { promisify } = await import('util');
+    const execPromise = promisify((await import('child_process')).exec);
+
+    // Use ps to find all Claude Code processes
+    // Looking for processes with 'claude' in the command
+    const { stdout } = await execPromise('ps aux | grep -i claude | grep -v grep');
+
+    const lines = stdout.trim().split('\n').filter(line => line.length > 0);
+    const processes = [];
+
+    for (const line of lines) {
+      // Parse ps output: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 11) continue;
+
+      const pid = parseInt(parts[1]);
+      const command = parts.slice(10).join(' ');
+
+      // Get working directory for this process
+      let cwd = 'Unknown';
+      try {
+        const { stdout: cwdOut } = await execPromise(`lsof -a -p ${pid} -d cwd -Fn | grep '^n' | cut -c2-`);
+        cwd = cwdOut.trim() || 'Unknown';
+      } catch (err) {
+        // Ignore errors for cwd lookup
+      }
+
+      processes.push({
+        pid,
+        command: command.substring(0, 200), // Truncate long commands
+        cwd
+      });
+    }
+
+    res.json(processes);
+  } catch (error) {
+    console.error('Error fetching processes:', error);
+    // Return empty array if no processes found or error
+    res.json([]);
+  }
+});
+
+/**
  * GET /api/projects/:name/bot-info
  * Fetch Telegram bot info using the bot token
  */

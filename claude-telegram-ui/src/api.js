@@ -78,3 +78,15 @@ export async function getBotInfo(projectName) {
   }
   return response.json();
 }
+
+/**
+ * Get all running Claude Code processes on the system
+ * @returns {Promise<Array>} Array of process objects with pid, command, and cwd
+ */
+export async function getRunningProcesses() {
+  const response = await fetch(`${API_BASE}/processes`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch processes: ${response.statusText}`);
+  }
+  return response.json();
+}

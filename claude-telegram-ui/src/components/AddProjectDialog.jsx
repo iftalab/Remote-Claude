@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { getRunningProcesses } from '../api.js'
 
 export default function AddProjectDialog({ isOpen, onClose, onAdd }) {
   const [formData, setFormData] = useState({
@@ -6,9 +7,31 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }) {
     token: '',
     dir: '',
     persona: '',
+    processId: null,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [runningProcesses, setRunningProcesses] = useState([])
+  const [loadingProcesses, setLoadingProcesses] = useState(false)
+
+  // Load running processes when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      loadRunningProcesses()
+    }
+  }, [isOpen])
+
+  async function loadRunningProcesses() {
+    try {
+      setLoadingProcesses(true)
+      const processes = await getRunningProcesses()
+      setRunningProcesses(processes)
+    } catch (err) {
+      console.error('Failed to load running processes:', err)
+    } finally {
+      setLoadingProcesses(false)
+    }
+  }
 
   async function handleBrowseDirectory() {
     try {
@@ -49,7 +72,7 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }) {
       await onAdd(formData)
 
       // Reset form and close
-      setFormData({ name: '', token: '', dir: '', persona: '' })
+      setFormData({ name: '', token: '', dir: '', persona: '', processId: null })
       onClose()
     } catch (err) {
       setError(err.message)
@@ -60,7 +83,7 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }) {
 
   function handleClose() {
     if (!saving) {
-      setFormData({ name: '', token: '', dir: '', persona: '' })
+      setFormData({ name: '', token: '', dir: '', persona: '', processId: null })
       setError(null)
       onClose()
     }
@@ -197,6 +220,54 @@ export default function AddProjectDialog({ isOpen, onClose, onAdd }) {
                 </svg>
                 <span>Define the agent's identity and rules. Can be added later.</span>
               </p>
+            </div>
+
+            {/* Process ID (Optional) */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Claude Code Process ID (Optional)
+              </label>
+              <div className="flex gap-3">
+                <input
+                  type="number"
+                  value={formData.processId || ''}
+                  onChange={(e) => setFormData({ ...formData, processId: e.target.value ? parseInt(e.target.value) : null })}
+                  placeholder="e.g., 12345"
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-xl font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white shadow-sm"
+                />
+                <button
+                  type="button"
+                  onClick={loadRunningProcesses}
+                  disabled={loadingProcesses}
+                  className="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 whitespace-nowrap font-medium transition-all duration-200 shadow-sm disabled:opacity-50"
+                >
+                  {loadingProcesses ? 'Loading...' : 'Refresh'}
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 flex items-center space-x-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Connect to an existing Claude Code process instead of spawning a new one</span>
+              </p>
+              {runningProcesses.length > 0 && (
+                <div className="mt-3 space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-xl p-3 bg-gray-50">
+                  <p className="text-xs font-semibold text-gray-600 mb-2">Running Claude Code Processes:</p>
+                  {runningProcesses.map((proc) => (
+                    <button
+                      key={proc.pid}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, processId: proc.pid })}
+                      className="w-full text-left px-3 py-2 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg text-xs font-mono transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-blue-600">PID: {proc.pid}</span>
+                        <span className="text-gray-500 truncate ml-2 max-w-xs">{proc.cwd}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

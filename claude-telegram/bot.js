@@ -3,7 +3,7 @@ const { exec } = require('child_process');
 const path = require('path');
 const config = require('./config');
 const AgentManager = require('./agent-sdk'); // Use Claude Agent SDK
-const { injectPersona, getPersona, updatePersonaInConfig } = require('./persona');
+const { injectPersona, getPersona, updatePersonaInConfig, updateProcessIdInConfig } = require('./persona');
 const {
   detectSignals,
   readTasksFile,
@@ -170,8 +170,15 @@ async function initializeAgent(botInfo) {
     console.log(`   - Spawning persistent Claude process with persona...`);
     console.log(`   - Persona size: ${persona ? persona.length : 0} chars`);
 
-    // Spawn with persona as initial prompt
-    await agent.spawn(persona);
+    // Check if project has existing process ID
+    const existingPid = project.processId;
+    if (existingPid) {
+      console.log(`   - Found existing process ID: ${existingPid}`);
+      console.log(`   - Attempting to reconnect...`);
+    }
+
+    // Spawn with persona as initial prompt and optional PID for reconnection
+    await agent.spawn(persona, existingPid);
     console.log(`   ✓ Agent spawned with persona for project: ${project.name}`);
 
     // Mark agent as ready
@@ -179,8 +186,28 @@ async function initializeAgent(botInfo) {
     console.log(`   ✓ Agent ready for project: ${project.name}`);
 
     // Setup agent event handlers
+    agent.on('reconnected', ({ processId }) => {
+      console.log(`   ✓ Reconnected to existing process ${processId} for project: ${project.name}`);
+
+      // Update process ID in projects.json
+      try {
+        const projectsPath = path.join(__dirname, 'projects.json');
+        updateProcessIdInConfig(projectsPath, project.name, processId);
+      } catch (error) {
+        console.error(`   ⚠️  Failed to save process ID:`, error.message);
+      }
+    });
+
     agent.on('crash', ({ crashCount, timestamp }) => {
       console.error(`   ⚠️  Agent crashed for project ${project.name} (crash #${crashCount})`);
+
+      // Clear process ID from projects.json on crash
+      try {
+        const projectsPath = path.join(__dirname, 'projects.json');
+        updateProcessIdInConfig(projectsPath, project.name, null);
+      } catch (error) {
+        console.error(`   ⚠️  Failed to clear process ID:`, error.message);
+      }
     });
 
     agent.on('restart', async ({ crashCount, timestamp }) => {
@@ -411,7 +438,8 @@ function initializeBots() {
         planner: planner,
         history: history,
         lastTaskTime: null,
-        startTime: Date.now()
+        startTime: Date.now(),
+        chatSessions: new Map() // Track session per chat ID
       };
 
       bots.push(botInfo);
@@ -503,7 +531,7 @@ function isAuthorized(userId) {
  * Execute Claude prompt via persistent agent
  */
 async function handlePrompt(botInfo, msg) {
-  const { bot, project, agent, planner, history } = botInfo;
+  const { bot, project, agent, planner, history, chatSessions } = botInfo;
   const chatId = msg.chat.id;
   const prompt = msg.text;
 
@@ -542,13 +570,23 @@ async function handlePrompt(botInfo, msg) {
 
     console.log(`🔧 [${project.name}] Sending prompt to agent (${prompt.length} chars)`);
 
-    // Send message to agent via stdin
-    const response = await agent.sendMessage(prompt);
+    // Get session ID for this chat (if exists)
+    const chatSessionId = chatSessions.get(chatId);
+
+    // Send message to agent with session ID
+    const result = await agent.sendMessage(prompt, chatSessionId);
+
+    // Store session ID for this chat
+    if (result.sessionId) {
+      chatSessions.set(chatId, result.sessionId);
+    }
+
+    const response = result.response;
 
     console.log(`✅ [${project.name}] Got response from agent (${response.length} chars)`);
 
     // Log assistant response to history
-    await history.logAssistant(response, { responseLength: response.length });
+    await history.logAssistant(response, { responseLength: response.length, sessionId: result.sessionId });
 
     // Check for task-related signals in the response
     const signals = detectSignals(response);
@@ -632,29 +670,17 @@ async function sendResponse(bot, chatId, text) {
 }
 
 /**
- * Handle /reset command - restart Claude process and reinject persona
+ * Handle /reset command - clear session for this chat
  */
 async function handleResetCommand(botInfo, chatId) {
-  const { bot, project, agent } = botInfo;
+  const { bot, project, chatSessions } = botInfo;
 
   try {
-    await bot.sendMessage(chatId, '🔄 Resetting agent...');
+    // Clear session for this chat
+    chatSessions.delete(chatId);
 
-    // Kill current process
-    console.log(`[${project.name}] Resetting agent...`);
-    await agent.kill();
-
-    // Get persona
-    const persona = getPersona(project);
-
-    // Spawn fresh process with persona
-    await agent.spawn(persona);
-
-    // Mark as ready
-    agent.markReady();
-
-    console.log(`[${project.name}] Agent reset complete`);
-    await bot.sendMessage(chatId, '🔄 Context cleared. Persona reloaded. Agent ready!');
+    console.log(`[${project.name}] Session reset for chat ${chatId}`);
+    await bot.sendMessage(chatId, '🔄 Session cleared. Your next message will start a new conversation!');
 
   } catch (error) {
     console.error(`[${project.name}] Reset failed:`, error.message);
@@ -787,7 +813,8 @@ async function handleDoneCommand(botInfo, chatId, messageText) {
       `The human task "${taskDescription}" is complete. ` +
       `Check TASKS.md for anything that was unblocked and continue working on available tasks.`;
 
-    const response = await agent.sendMessage(instruction);
+    const result = await agent.sendMessage(instruction);
+    const response = result.response;
 
     // Check for signals
     const signals = detectSignals(response);

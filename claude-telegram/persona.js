@@ -112,11 +112,39 @@ function updatePersonaInConfig(projectsPath, projectName, newPersona) {
   console.log(`[Persona] ✅ Updated persona for project: ${projectName}`);
 }
 
+/**
+ * Update process ID in projects.json
+ *
+ * @param {string} projectsPath - Path to projects.json file
+ * @param {string} projectName - Name of the project to update
+ * @param {number|null} processId - Process ID (null to clear)
+ */
+function updateProcessIdInConfig(projectsPath, projectName, processId) {
+  const fs = require('fs');
+
+  // Read current projects.json
+  const projectsData = JSON.parse(fs.readFileSync(projectsPath, 'utf8'));
+
+  // Find and update the project
+  const project = projectsData.find(p => p.name === projectName);
+  if (!project) {
+    throw new Error(`Project not found: ${projectName}`);
+  }
+
+  project.processId = processId;
+
+  // Write back to file
+  fs.writeFileSync(projectsPath, JSON.stringify(projectsData, null, 2), 'utf8');
+
+  console.log(`[Process] ✅ Updated process ID for project: ${projectName} -> ${processId}`);
+}
+
 module.exports = {
   injectPersona,
   loadPersonaFromProject,
   createDefaultPersona,
   getPersona,
   updatePersonaInConfig,
+  updateProcessIdInConfig,
   CONFIRMATION_TIMEOUT_MS
 };
